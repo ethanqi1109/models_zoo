@@ -1,0 +1,228 @@
+{\rtf1\ansi\ansicpg936\cocoartf2636
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\fnil\fcharset134 PingFangSC-Regular;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 import os\
+\
+import cv2\
+import insightface\
+import numpy as np\
+from sklearn import preprocessing\
+\
+\
+class FaceRecognition:\
+    def __init__(self, gpu_id=0, face_db='face_db', threshold=1.24, det_thresh=0.50, det_size=(640, 640)):\
+        """\
+        
+\f1 \'c8\'cb\'c1\'b3\'ca\'b6\'b1\'f0\'b9\'a4\'be\'df\'c0\'e0
+\f0 \
+        :param gpu_id: 
+\f1 \'d5\'fd\'ca\'fd\'ce\'aa
+\f0 GPU
+\f1 \'b5\'c4
+\f0 ID
+\f1 \'a3\'ac\'b8\'ba\'ca\'fd\'ce\'aa\'ca\'b9\'d3\'c3
+\f0 CPU\
+        :param face_db: 
+\f1 \'c8\'cb\'c1\'b3\'bf\'e2\'ce\'c4\'bc\'fe\'bc\'d0
+\f0 \
+        :param threshold: 
+\f1 \'c8\'cb\'c1\'b3\'ca\'b6\'b1\'f0\'e3\'d0\'d6\'b5
+\f0 \
+        :param det_thresh: 
+\f1 \'bc\'ec\'b2\'e2\'e3\'d0\'d6\'b5
+\f0 \
+        :param det_size: 
+\f1 \'bc\'ec\'b2\'e2\'c4\'a3\'d0\'cd\'cd\'bc\'c6\'ac\'b4\'f3\'d0\'a1
+\f0 \
+        """\
+        self.gpu_id = gpu_id\
+        self.face_db = face_db\
+        self.threshold = threshold\
+        self.det_thresh = det_thresh\
+        self.det_size = det_size\
+\
+        # 
+\f1 \'bc\'d3\'d4\'d8\'c8\'cb\'c1\'b3\'ca\'b6\'b1\'f0\'c4\'a3\'d0\'cd\'a3\'ac\'b5\'b1
+\f0 allowed_modules=['detection', 'recognition']
+\f1 \'ca\'b1\'a3\'ac\'d6\'bb\'b5\'a5\'b4\'bf\'bc\'ec\'b2\'e2\'ba\'cd\'ca\'b6\'b1\'f0
+\f0 \
+        self.model = insightface.app.FaceAnalysis(root='./',\
+                                                  allowed_modules=None,\
+                                                  providers=['CUDAExecutionProvider'])\
+        self.model.prepare(ctx_id=self.gpu_id, det_thresh=self.det_thresh, det_size=self.det_size)\
+        # 
+\f1 \'c8\'cb\'c1\'b3\'bf\'e2\'b5\'c4\'c8\'cb\'c1\'b3\'cc\'d8\'d5\'f7
+\f0 \
+        self.faces_embedding = list()\
+        # 
+\f1 \'bc\'d3\'d4\'d8\'c8\'cb\'c1\'b3\'bf\'e2\'d6\'d0\'b5\'c4\'c8\'cb\'c1\'b3
+\f0 \
+        self.load_faces(self.face_db)\
+\
+    # 
+\f1 \'bc\'d3\'d4\'d8\'c8\'cb\'c1\'b3\'bf\'e2\'d6\'d0\'b5\'c4\'c8\'cb\'c1\'b3
+\f0 \
+    def load_faces(self, face_db_path):\
+        if not os.path.exists(face_db_path):\
+            os.makedirs(face_db_path)\
+        for root, dirs, files in os.walk(face_db_path):\
+            for file in files:\
+                input_image = cv2.imdecode(np.fromfile(os.path.join(root, file), dtype=np.uint8), 1)\
+                user_name = file.split(".")[0]\
+                face = self.model.get(input_image)[0]\
+                embedding = np.array(face.embedding).reshape((1, -1))\
+                embedding = preprocessing.normalize(embedding)\
+                self.faces_embedding.append(\{\
+                    "user_name": user_name,\
+                    "feature": embedding\
+                \})\
+\
+    # 
+\f1 \'c8\'cb\'c1\'b3\'ca\'b6\'b1\'f0
+\f0 \
+    def recognition(self, image):\
+        faces = self.model.get(image)\
+        results = list()\
+        for face in faces:\
+            # 
+\f1 \'bf\'aa\'ca\'bc\'c8\'cb\'c1\'b3\'ca\'b6\'b1\'f0
+\f0 \
+            embedding = np.array(face.embedding).reshape((1, -1))\
+            embedding = preprocessing.normalize(embedding)\
+            user_name = "unknown"\
+            for com_face in self.faces_embedding:\
+                r = self.feature_compare(embedding, com_face["feature"], self.threshold)\
+                if r:\
+                    user_name = com_face["user_name"]\
+            results.append(user_name)\
+        return results\
+\
+    @staticmethod\
+    def feature_compare(feature1, feature2, threshold):\
+        diff = np.subtract(feature1, feature2)\
+        dist = np.sum(np.square(diff), 1)\
+        if dist < threshold:\
+            return True\
+        else:\
+            return False\
+\
+    def register(self, image, user_name):\
+        faces = self.model.get(image)\
+        if len(faces) != 1:\
+            return '
+\f1 \'cd\'bc\'c6\'ac\'bc\'ec\'b2\'e2\'b2\'bb\'b5\'bd\'c8\'cb\'c1\'b3
+\f0 '\
+        # 
+\f1 \'c5\'d0\'b6\'cf\'c8\'cb\'c1\'b3\'ca\'c7\'b7\'f1\'b4\'e6\'d4\'da
+\f0 \
+        embedding = np.array(faces[0].embedding).reshape((1, -1))\
+        embedding = preprocessing.normalize(embedding)\
+        is_exits = False\
+        for com_face in self.faces_embedding:\
+            r = self.feature_compare(embedding, com_face["feature"], self.threshold)\
+            if r:\
+                is_exits = True\
+        if is_exits:\
+            return '
+\f1 \'b8\'c3\'d3\'c3\'bb\'a7\'d2\'d1\'b4\'e6\'d4\'da
+\f0 '\
+        # 
+\f1 \'b7\'fb\'ba\'cf\'d7\'a2\'b2\'e1\'cc\'f5\'bc\'fe\'b1\'a3\'b4\'e6\'cd\'bc\'c6\'ac\'a3\'ac\'cd\'ac\'ca\'b1\'b0\'d1\'cc\'d8\'d5\'f7\'cc\'ed\'bc\'d3\'b5\'bd\'c8\'cb\'c1\'b3\'cc\'d8\'d5\'f7\'bf\'e2\'d6\'d0
+\f0 \
+        cv2.imencode('.png', image)[1].tofile(os.path.join(self.face_db, '%s.png' % user_name))\
+        self.faces_embedding.append(\{\
+            "user_name": user_name,\
+            "feature": embedding\
+        \})\
+        return "success"\
+\
+    # 
+\f1 \'bc\'ec\'b2\'e2\'c8\'cb\'c1\'b3
+\f0 \
+    def detect(self, image):\
+        faces = self.model.get(image)\
+        results = list()\
+        for face in faces:\
+            result = dict()\
+            # 
+\f1 \'bb\'f1\'c8\'a1\'c8\'cb\'c1\'b3\'ca\'f4\'d0\'d4
+\f0 \
+            result["bbox"] = np.array(face.bbox).astype(np.int32).tolist()\
+            result["kps"] = np.array(face.kps).astype(np.int32).tolist()\
+            result["landmark_3d_68"] = np.array(face.landmark_3d_68).astype(np.int32).tolist()\
+            result["landmark_2d_106"] = np.array(face.landmark_2d_106).astype(np.int32).tolist()\
+            result["pose"] = np.array(face.pose).astype(np.int32).tolist()\
+            result["age"] = face.age\
+            gender = '
+\f1 \'c4\'d0
+\f0 '\
+            if face.gender == 0:\
+                gender = '
+\f1 \'c5\'ae
+\f0 '\
+            result["gender"] = gender\
+            # 
+\f1 \'bf\'aa\'ca\'bc\'c8\'cb\'c1\'b3\'ca\'b6\'b1\'f0
+\f0 \
+            embedding = np.array(face.embedding).reshape((1, -1))\
+            embedding = preprocessing.normalize(embedding)\
+            result["embedding"] = embedding\
+            results.append(result)\
+        return results\
+\
+\
+if __name__ == '__main__':\
+    img = cv2.imdecode(np.fromfile('
+\f1 \'b5\'cf\'c0\'f6\'c8\'c8\'b0\'cd
+\f0 .jpg', dtype=np.uint8), -1)\
+    face_recognitio = FaceRecognition()\
+    # 
+\f1 \'c8\'cb\'c1\'b3\'d7\'a2\'b2\'e1
+\f0 \
+    result = face_recognitio.register(img, user_name='
+\f1 \'b5\'cf\'c0\'f6\'c8\'c8\'b0\'cd
+\f0 ')\
+    print(result)\
+\
+    # 
+\f1 \'c8\'cb\'c1\'b3\'ca\'b6\'b1\'f0
+\f0 \
+    results = face_recognitio.recognition(img)\
+    for result in results:\
+        print("
+\f1 \'ca\'b6\'b1\'f0\'bd\'e1\'b9\'fb\'a3\'ba
+\f0 \{\}".format(result))\
+\
+    results = face_recognitio.detect(img)\
+    for result in results:\
+        print('
+\f1 \'c8\'cb\'c1\'b3\'bf\'f2\'d7\'f8\'b1\'ea\'a3\'ba
+\f0 \{\}'.format(result["bbox"]))\
+        print('
+\f1 \'c8\'cb\'c1\'b3\'ce\'e5\'b8\'f6\'b9\'d8\'bc\'fc\'b5\'e3\'a3\'ba
+\f0 \{\}'.format(result["kps"]))\
+        print('
+\f1 \'c8\'cb\'c1\'b3
+\f0 3D
+\f1 \'b9\'d8\'bc\'fc\'b5\'e3\'a3\'ba
+\f0 \{\}'.format(result["landmark_3d_68"]))\
+        print('
+\f1 \'c8\'cb\'c1\'b3
+\f0 2D
+\f1 \'b9\'d8\'bc\'fc\'b5\'e3\'a3\'ba
+\f0 \{\}'.format(result["landmark_2d_106"]))\
+        print('
+\f1 \'c8\'cb\'c1\'b3\'d7\'cb\'cc\'ac\'a3\'ba
+\f0 \{\}'.format(result["pose"]))\
+        print('
+\f1 \'c4\'ea\'c1\'e4\'a3\'ba
+\f0 \{\}'.format(result["age"]))\
+        print('
+\f1 \'d0\'d4\'b1\'f0\'a3\'ba
+\f0 \{\}'.format(result["gender"]))\
+\
+}
